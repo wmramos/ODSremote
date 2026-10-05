@@ -10,10 +10,10 @@ Source: https://github.com/wmramos/ODSremote.
 
 ## Windows Editions
 
-- **Quick Support** (`ODSremote-qs.exe`): portable, incoming-only, requires local
+- **Quick Support** (`ODSremote-1.5.0-windows-x64-qs.exe`): portable, incoming-only, requires local
   approval. Installation and account login are disabled. Uses its own
   `ODSremoteQS` configuration and IPC identity, separate from the Agent.
-- **Agent** (`ODSremote-agent-install.exe`): shows an installation dialog.
+- **Agent** (`ODSremote-1.5.0-windows-x64-agent-install.exe`): shows an installation dialog.
   An authorized installation provides the normal Windows background service.
   Starts with click approval; unattended access must be explicitly configured by
   the device owner using the client's password and approval settings.
@@ -32,6 +32,19 @@ Renaming an executable cannot enable installation in the Quick Support profile.
 
 ## Build And Release
 
+Release numbers follow the upstream RustDesk version in the root `Cargo.toml`,
+read using the existing `build.py` version helper. Current release naming:
+
+- Release title: **ODSremote 1.5.0**.
+- Release tag: **odsremote-v1.5.0** (separate from inherited upstream tags).
+- Quick Support: `ODSremote-1.5.0-windows-x64-qs.exe`.
+- Agent: `ODSremote-1.5.0-windows-x64-agent-install.exe`.
+
+The workflow derives artifact names, file names, wrapper metadata and its release
+summary from this single version. Updating the upstream base updates these names
+automatically; edition names do not introduce independent release versions.
+The final `-qs.exe` and `-install.exe` suffixes preserve the native startup modes.
+
 The `ODSremote Windows` workflow builds Windows x64 only, with separate compile
 features for each edition. It uploads unsigned **test artifacts**, not public
 releases. Run it manually or push to `codex/odsremote-windows`. Existing upstream
@@ -49,6 +62,11 @@ The ODSremote feature initializes its own compiled profile; custom.txt is not
 consumed by these builds. Feature-off builds retain upstream behavior.
 
 ## Regression Surface
+
+Release naming changes only `.github/workflows/odsremote-windows.yml` (artifact
+packaging and release metadata), `libs/portable/build.rs` (OriginalFilename),
+and this document. Installed executable paths, service identity, client
+configuration, networking and portal routing are unchanged by the naming update.
 
 - `Cargo.toml` and `src/lib.rs`: additive feature gates and client-local module.
 - `src/common.rs`: branded initialization at the existing custom-client entry

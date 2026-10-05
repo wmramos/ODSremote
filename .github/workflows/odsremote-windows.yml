@@ -88,6 +88,15 @@ jobs:
         with:
           name: odsremote-bridge
           path: .
+      - name: Read upstream release version
+        id: version
+        run: |
+          $version = python -c "import build; print(build.get_version())"
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw 'Invalid upstream release version' }
+          "ODSREMOTE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "number=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "release_name=ODSremote $version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "release_tag=odsremote-v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
         with:
           version: '15.0.6'
@@ -155,13 +164,16 @@ jobs:
           python libs/portable/generate.py -f stage -o libs/portable -e "stage/$exe"
           if ($LASTEXITCODE -ne 0) { throw 'Portable package failed' }
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          $name = if ($env:ODSREMOTE_EDITION -eq 'qs') { 'ODSremote-qs.exe' } else { 'ODSremote-agent-install.exe' }
+          $name = if ($env:ODSREMOTE_EDITION -eq 'qs') { "ODSremote-$env:ODSREMOTE_VERSION-windows-x64-qs.exe" } else { "ODSremote-$env:ODSREMOTE_VERSION-windows-x64-agent-install.exe" }
           Copy-Item -LiteralPath target/release/rustdesk-portable-packer.exe -Destination "dist/$name"
           Copy-Item -LiteralPath LICENCE,ODSREMOTE.md -Destination dist
           Get-FileHash -LiteralPath "dist/$name" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $name" } | Set-Content -Path dist/SHA256SUMS.txt
+          "### ODSremote $env:ODSREMOTE_VERSION" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Release tag: odsremote-v$env:ODSREMOTE_VERSION" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "Unsigned test file: $name" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: ODSremote-${{ matrix.edition }}-windows-x64-unsigned
+          name: ODSremote-${{ steps.version.outputs.number }}-windows-x64-${{ matrix.edition }}-unsigned
           path: dist
           if-no-files-found: error
           retention-days: 14
