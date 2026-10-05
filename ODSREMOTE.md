@@ -46,14 +46,17 @@ automatically; edition names do not introduce independent release versions.
 The final `-qs.exe` and `-install.exe` suffixes preserve the native startup modes.
 
 The `ODSremote Windows` workflow builds Windows x64 only, with separate compile
-features for each edition. It uploads unsigned **test artifacts**, not public
-releases. Run it manually or push to `codex/odsremote-windows`. Existing upstream
+features for each edition. Push builds upload unsigned **test artifacts**. A manual
+run with `publish_downloads=true` publishes a clearly labeled unsigned GitHub
+pre-release only after both builds and policy tests pass. Publication verifies
+both Windows x64 executable headers, checksums and matching license notices.
+Run it manually or push to `codex/odsremote-windows`. Existing upstream
 workflows are retained for provenance and should stay disabled in this fork.
 
 Signing is not configured. Do not publish these artifacts as production downloads
 until both editions have passed tests on clean Windows machines and are signed
-with OneDot's certificate. The workflow deliberately does not enable the portal
-downloads or publish a release automatically. Include the matching source commit,
+with OneDot's certificate. The workflow does not enable portal downloads or make
+an unsigned build a stable production release. Include the matching source commit,
 LICENCE and notices with any release. Optional virtual-monitor and printer-driver
 bundles are not included in this first build.
 
@@ -82,3 +85,7 @@ configuration, networking and portal routing are unchanged by the naming update.
 
 Current status: source and build workflow prepared; no client binary is yet
 certified for distribution. A successful CI compile is not a live-session test.
+
+Publication changes only the Windows workflow (required rustfmt component and
+opt-in pre-release job) and the new `branding/stage_release.py` artifact validator.
+The client runtime, server configuration and release numbering are unchanged.

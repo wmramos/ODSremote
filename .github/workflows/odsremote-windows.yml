@@ -2,6 +2,11 @@ name: ODSremote Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_downloads:
+        description: Publish unsigned test downloads as a GitHub pre-release
+        type: boolean
+        default: false
   push:
     branches: [codex/odsremote-windows]
 
@@ -27,6 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: '1.75'
+          components: rustfmt
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           prefix-key: odsremote-bridge
@@ -177,3 +183,40 @@ jobs:
           path: dist
           if-no-files-found: error
           retention-days: 14
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_downloads
+    needs: windows
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Read release version
+        id: version
+        run: |
+          version=$(python -c 'import build; print(build.get_version())')
+          echo "number=$version" >> "$GITHUB_OUTPUT"
+      - name: Test release validation
+        run: python -m unittest discover -s branding -p test_stage_release.py
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: ODSremote-${{ steps.version.outputs.number }}-windows-x64-*-unsigned
+          path: incoming
+      - name: Verify and stage both downloads
+        env:
+          ODSREMOTE_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          python branding/stage_release.py incoming release
+      - name: Publish unsigned pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ODSREMOTE_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          tag="odsremote-v$ODSREMOTE_VERSION"
+          gh release create "$tag" release/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "ODSremote $ODSREMOTE_VERSION" --prerelease \
+            --notes "Unsigned Windows x64 test builds based on RustDesk $ODSREMOTE_VERSION. Quick Support is portable and requires local approval; Agent requires an authorized installation. Both editions passed the automated build and policy checks. Live-session, UAC, reboot and unattended-access testing are not yet complete. Windows may show a SmartScreen warning. This is not a production-certified or signed release. Checksums, source commit and AGPL license are included. No shared remote-access credentials are embedded."
+          echo "Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"
