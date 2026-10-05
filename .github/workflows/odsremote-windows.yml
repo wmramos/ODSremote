@@ -156,7 +156,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Portable package failed' }
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           $name = if ($env:ODSREMOTE_EDITION -eq 'qs') { 'ODSremote-qs.exe' } else { 'ODSremote-agent-install.exe' }
-          Copy-Item -LiteralPath libs/portable/target/release/rustdesk-portable-packer.exe -Destination "dist/$name"
+          Copy-Item -LiteralPath target/release/rustdesk-portable-packer.exe -Destination "dist/$name"
           Copy-Item -LiteralPath LICENCE,ODSREMOTE.md -Destination dist
           Get-FileHash -LiteralPath "dist/$name" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $name" } | Set-Content -Path dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
