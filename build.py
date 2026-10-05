@@ -314,6 +314,11 @@ def linux_packaging_branch():
 
 def get_features(args):
     features = ['inline'] if not args.flutter else []
+    edition = os.environ.get('ODSREMOTE_EDITION', '')
+    if edition:
+        if not windows or not args.flutter or edition not in ('agent', 'qs'):
+            raise Exception('ODSREMOTE_EDITION requires Windows Flutter and must be agent or qs')
+        features.append('odsremote-qs' if edition == 'qs' else 'odsremote')
     if args.hwcodec:
         features.append('hwcodec')
     if args.vram:

@@ -2562,7 +2562,9 @@ class _AboutState extends State<_About> {
                   ).marginSymmetric(vertical: 4.0)),
               InkWell(
                   onTap: () {
-                    launchUrlString('https://rustdesk.com');
+                    launchUrlString(bind.mainGetAppNameSync().startsWith('ODSremote')
+                        ? 'https://help.onedotsystems.com'
+                        : 'https://rustdesk.com');
                   },
                   child: Text(
                     translate('Website'),

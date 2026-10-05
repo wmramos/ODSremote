@@ -1,3 +1,16 @@
+# ODSremote
+
+<img src="branding/logo.png" alt="OneDot Systems" width="96">
+
+OneDot Systems remote support. [Help portal](https://help.onedotsystems.com).
+See [Windows Quick Support and Agent](ODSREMOTE.md) for edition policies, build
+instructions and release status. Branded customer downloads are not yet released.
+
+This public source fork retains RustDesk's AGPL license and original attribution.
+The upstream documentation below is reference material, not ODSremote downloads.
+
+---
+
 <p align="center">
   <img src="res/logo-header.svg" alt="RustDesk - Your remote desktop"><br>
   <a href="#raw-steps-to-build">Build</a> •

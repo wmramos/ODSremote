@@ -1,0 +1,167 @@
+name: ODSremote Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/odsremote-windows]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: odsremote-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bridge:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+      - name: Install bridge prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libclang-dev libgtk-3-dev llvm-dev nasm ninja-build pkg-config
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: '1.75'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          prefix-key: odsremote-bridge
+      - uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
+        with:
+          channel: stable
+          flutter-version: '3.22.3'
+          cache: true
+      - name: Generate matching Flutter bridge
+        run: |
+          cargo install cargo-expand --version 1.0.95 --locked
+          cargo install flutter_rust_bridge_codegen --version 1.80.1 --features uuid --locked
+          sed -i 's/extended_text: 14.0.0/extended_text: 13.0.0/' flutter/pubspec.yaml
+          (cd flutter && flutter pub get)
+          flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
+          cp flutter/macos/Runner/bridge_generated.h flutter/ios/Runner/bridge_generated.h
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: odsremote-bridge
+          if-no-files-found: error
+          path: |
+            src/bridge_generated.rs
+            src/bridge_generated.io.rs
+            flutter/lib/generated_bridge.dart
+            flutter/lib/generated_bridge.freezed.dart
+            flutter/macos/Runner/bridge_generated.h
+            flutter/ios/Runner/bridge_generated.h
+
+  elevation-helper:
+    uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
+    with:
+      target: windows-2022
+      configuration: Release
+      platform: x64
+      target_version: Windows10
+
+  windows:
+    needs: [bridge, elevation-helper]
+    runs-on: windows-2022
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [qs, agent]
+    env:
+      ODSREMOTE_EDITION: ${{ matrix.edition }}
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
+      VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+      VCPKG_CMAKE_VERSION: '4.3.0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: odsremote-bridge
+          path: .
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225
+        id: flutter
+        with:
+          channel: stable
+          flutter-version: '3.24.5'
+          architecture: x64
+      - name: Stage pinned upstream Flutter engine
+        run: |
+          flutter precache --windows
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter precache failed' }
+          Invoke-WebRequest https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile engine.zip
+          if ((Get-FileHash engine.zip -Algorithm SHA256).Hash -ne 'EC8CABF36EE4FF24C8D98DE25B00E70781EB03876265AEE84D0FE554A110036E') { throw 'Upstream engine changed; review before updating checksum' }
+          Expand-Archive engine.zip -DestinationPath engine
+          $engineDir = Join-Path '${{ steps.flutter.outputs['CACHE-PATH'] }}' 'bin/cache/artifacts/engine/windows-x64-release'
+          Copy-Item -Path engine/* -Destination $engineDir -Recurse -Force
+          $sdk = '${{ steps.flutter.outputs['CACHE-PATH'] }}'
+          git -C $sdk apply "$PWD/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter SDK patch failed' }
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: '1.75'
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          prefix-key: odsremote-${{ matrix.edition }}
+      - uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: 9e593bb18ea69cc5095e012465dcd675a822ed0d
+      - name: Build native dependencies
+        run: |
+          & "$env:VCPKG_ROOT/vcpkg.exe" install --triplet x64-windows-static "--x-install-root=$env:VCPKG_ROOT/installed"
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg dependencies failed' }
+      - name: Build edition
+        run: |
+          ./branding/prepare.ps1 -Edition $env:ODSREMOTE_EDITION
+          python build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+          if ($LASTEXITCODE -ne 0) { throw 'ODSremote build failed' }
+          Copy-Item -LiteralPath flutter/build/windows/x64/runner/Release -Destination stage -Recurse
+          $exe = if ($env:ODSREMOTE_EDITION -eq 'qs') { 'ODSremoteQS.exe' } else { 'ODSremote.exe' }
+          Rename-Item -LiteralPath stage/rustdesk.exe -NewName $exe
+          Copy-Item -LiteralPath LICENCE,ODSREMOTE.md -Destination stage
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: topmostwindow-artifacts-x64
+          path: stage
+      - name: Verify edition policy
+        run: |
+          $feature = if ($env:ODSREMOTE_EDITION -eq 'qs') { 'odsremote-qs' } else { 'odsremote' }
+          cargo test --locked --features "flutter,hwcodec,vram,$feature" --lib odsremote::tests
+          if ($LASTEXITCODE -ne 0) { throw 'ODSremote policy tests failed' }
+      - name: Package unsigned test executable
+        run: |
+          python -m pip install -r libs/portable/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Packer dependencies failed' }
+          $manifest = Join-Path $PWD 'res/manifest.xml'
+          $text = [IO.File]::ReadAllText($manifest)
+          $text = $text -replace '(?m)^.*<dpiAware>.*\r?\n', ''
+          [IO.File]::WriteAllText($manifest, $text)
+          $exe = if ($env:ODSREMOTE_EDITION -eq 'qs') { 'ODSremoteQS.exe' } else { 'ODSremote.exe' }
+          python libs/portable/generate.py -f stage -o libs/portable -e "stage/$exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Portable package failed' }
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $name = if ($env:ODSREMOTE_EDITION -eq 'qs') { 'ODSremote-qs.exe' } else { 'ODSremote-agent-install.exe' }
+          Copy-Item -LiteralPath libs/portable/target/release/rustdesk-portable-packer.exe -Destination "dist/$name"
+          Copy-Item -LiteralPath LICENCE,ODSREMOTE.md -Destination dist
+          Get-FileHash -LiteralPath "dist/$name" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $name" } | Set-Content -Path dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ODSremote-${{ matrix.edition }}-windows-x64-unsigned
+          path: dist
+          if-no-files-found: error
+          retention-days: 14
